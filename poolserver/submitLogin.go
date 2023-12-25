@@ -25,7 +25,7 @@ func handleSubmitLogin(wsc AbstractSocketClient, icmd interface{}) (interface{},
 	// log.Debugf("Client (User agent: %v) comes.", cmd.Params)
 	log.Debugf("Client (User agent: %v) comes.", cmd.Pass)
 
-	if hasUndesiredUserAgentV1(wsc.RemoteAddr(), cmd.User, wsc.GetAgentBlacklist(), wsc.GetAgentWhitelist()) {
+	if hasUndesiredUserAgent(wsc.RemoteAddr(), cmd.User, wsc.GetAgentBlacklist(), wsc.GetAgentWhitelist()) {
 		go wsc.DisconnectGracefully()
 		return nil, pooljson.ErrBadUserAgent
 	}

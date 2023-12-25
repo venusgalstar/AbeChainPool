@@ -66,19 +66,6 @@ func NewAuthorizeCmd(username, password, address, registering string) *Authorize
 	}
 }
 
-// AuthorizeCmdv1 defines the authorize JSON-RPC command for v1
-type AuthorizeCmdV1 struct {
-	Username string
-	Password string
-}
-
-func NewAuthorizeCmdV1(username, password string) *AuthorizeCmdV1 {
-	return &AuthorizeCmdV1{
-		username,
-		password,
-	}
-}
-
 type HelloCmd struct {
 	Agent string `json:"agent"`
 	Host  string `json:"host"`
@@ -100,12 +87,6 @@ type EthSubmitLogin struct {
 	User string
 	Pass string
 }
-
-// func NewEthSubmitLogin(params []string) *EthSubmitLogin {
-// 	return &EthSubmitLogin{
-// 		Params: params,
-// 	}
-// }
 
 type NoopCmd struct{}
 
@@ -573,8 +554,6 @@ func init() {
 	MustRegisterCmd("mining.noop", (*NoopCmd)(nil), flags)
 	MustRegisterCmd("mining.subscribe", (*SubscribeCmd)(nil), flags)
 	// MustRegisterCmd("mining.authorize", (*AuthorizeCmd)(nil), flags), for v2
-
-	MustRegisterCmd("mining.authorize", (*AuthorizeCmdV1)(nil), flags)
 
 	MustRegisterCmd("mining.submit", (*SubmitCmd)(nil), flags)
 	MustRegisterCmd("mining.hashrate", (*HashRateCmd)(nil), flags)

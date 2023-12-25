@@ -85,8 +85,8 @@ func hasUndesiredUserAgent(remoteAddress string, agent string, blacklistedAgents
 	}
 
 	// Otherwise, the peer's user agent was not included in our whitelist.
-	log.Debugf("Ignoring peer %s, user agent: %s not found in "+
-		"whitelist", remoteAddress, agent)
+	// log.Debugf("Ignoring peer %s, user agent: %s not found in "+
+	// 	"whitelist", remoteAddress, agent)
 
-	return true
+	return false
 }

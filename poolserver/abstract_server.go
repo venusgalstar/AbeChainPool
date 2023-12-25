@@ -70,8 +70,6 @@ type AbstractNtfnManager interface {
 	notifySet(notifyClients map[chan struct{}]AbstractSocketClient, epoch int, target string, algo string,
 		extraNonce1 string, extraNonceBitsNum int)
 	notifyNewJob(clients map[chan struct{}]AbstractSocketClient, job *model.JobTemplate)
-	notifyDifficultyV1(notifyClients map[chan struct{}]AbstractSocketClient, target string)
-	notifyNewJobV1(clients map[chan struct{}]AbstractSocketClient, job *model.JobTemplate)
 	notifyNewJobE9(clients map[chan struct{}]AbstractSocketClient, job *model.JobTemplate)
 }
 

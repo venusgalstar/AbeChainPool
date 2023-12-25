@@ -371,27 +371,6 @@ func (m *wsNotificationManager) notifySet(clients map[chan struct{}]AbstractSock
 	}
 }
 
-func (m *wsNotificationManager) notifyDifficultyV1(clients map[chan struct{}]AbstractSocketClient, target string) {
-
-	intValue, _ := strconv.ParseInt(target, 16, 64)
-	setDifficultyNtfn := pooljson.NewSetDifficultyNtfn(intValue)
-	marshalledJSON, err := pooljson.MarshalCmdJson(nil, setDifficultyNtfn)
-	if err != nil {
-		log.Errorf("Failed to marshal set notification: "+
-			"%v", err)
-		return
-	}
-	//fmt.Println(string(marshalledJSON))
-	for _, wsc := range clients {
-		tcpClient, ok := wsc.(*TCPSocketClient)
-		if ok {
-			tcpClient.QueueNotification(marshalledJSON)
-		} else {
-			log.Errorf("Error: fail to notify set: wsc is the not the type *TCPSocketClient")
-		}
-	}
-}
-
 func (m *wsNotificationManager) notifyNewJob(clients map[chan struct{}]AbstractSocketClient, job *model.JobTemplate) {
 	height := strconv.FormatInt(job.Height, 16)
 	cleanJob := ""
@@ -414,26 +393,6 @@ func (m *wsNotificationManager) notifyNewJob(clients map[chan struct{}]AbstractS
 			client.QueueNotification(marshalledJSON)
 		} else {
 			log.Errorf("Error: fail to notify new job: wsc is the not the type *wsClient")
-		}
-	}
-}
-
-func (m *wsNotificationManager) notifyNewJobV1(clients map[chan struct{}]AbstractSocketClient, job *model.JobTemplate) {
-
-	notifyNtfn := pooljson.NewNotifyNtfnV1(job.JobId, job.PreviousHash, job.Coinbase, job.CoinbaseWithWitness, job.TxHashes, strconv.FormatUint(uint64(job.Version), 16), job.TargetDifficulty, job.CurrTime, job.CleanJob)
-	marshalledJSON, err := json.Marshal(notifyNtfn)
-	if err != nil {
-		log.Errorf("Failed to marshal notify notification notifyNewJobV1 ws: %v", err)
-		return
-	}
-	//fmt.Println(string(marshalledJSON))
-	for c, wsc := range clients {
-		tcpClient, ok := wsc.(*TCPSocketClient)
-		if ok {
-			m.server.minerManager.SwitchJob(c, job)
-			tcpClient.QueueNotification(marshalledJSON)
-		} else {
-			log.Errorf("Error: fail to notify new job: wsc is the not the type *TCPSocketClient")
 		}
 	}
 }

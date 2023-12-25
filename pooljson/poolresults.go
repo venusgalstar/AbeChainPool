@@ -35,22 +35,6 @@ type SubmitResult struct {
 	Detail string `json:"detail,omitempty"`
 }
 
-// SubmitResult models objects included in the mining.submit response.
-// type SubmitResultV1 interface {
-// 	Content interface {
-// 		Difficulty interface {
-// 			Method string
-// 			Diff   string
-// 		}
-// 		Notify interface {
-// 			Method string
-// 			Job    string
-// 		}
-// 	}
-// 	Nonce1 string
-// 	Nonce2 uint
-// }
-
 // HashRateResult models objects included in the mining.hashrate response.
 type HashRateResult struct{}
 

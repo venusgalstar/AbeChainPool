@@ -2,10 +2,11 @@ package poolserver
 
 import (
 	"context"
-	"fmt"
 	"sync/atomic"
 	"time"
 
+	"github.com/abesuite/abe-miningpool-server/chaincfg"
+	"github.com/abesuite/abe-miningpool-server/consensus/ethash"
 	"github.com/abesuite/abe-miningpool-server/constdef"
 	"github.com/abesuite/abe-miningpool-server/model"
 	"github.com/abesuite/abe-miningpool-server/pooljson"
@@ -15,16 +16,11 @@ import (
 
 // handleAuthorize implements the mining.authorize command.
 func handleAuthorize(wsc AbstractSocketClient, icmd interface{}) (interface{}, error) {
-	cmd, ok := icmd.(*pooljson.AuthorizeCmdV1)
-
-	fmt.Println("HERE!!!!!!!!!!!")
-
+	cmd, ok := icmd.(*pooljson.AuthorizeCmd)
 	if !ok {
 		log.Debugf("Client %v sends an invalid mining.authorize command.", wsc.RemoteAddr())
 		return nil, pooljson.ErrInvalidRequestParams
 	}
-
-	fmt.Printf("%s", cmd)
 
 	minermgr := wsc.GetMinerManager()
 	minerInfo, ok := minermgr.GetMiner(wsc.QuitChan())
@@ -33,13 +29,16 @@ func handleAuthorize(wsc AbstractSocketClient, icmd interface{}) (interface{}, e
 		return nil, pooljson.ErrUnsubscribed
 	}
 
-	log.Debugf("Client %v authorized  Username is %v, password is %v.", wsc.RemoteAddr(), cmd.Username, cmd.Password)
+	if cmd.Registering == "" {
+		cmd.Registering = "0"
+	}
+	log.Debugf("Client %v authorized (registering: %v). Username is %v, password is %v.", wsc.RemoteAddr(), cmd.Registering, cmd.Username, cmd.Password)
 
 	if cmd.Username != "" {
 		_, ok = minerInfo.Username[cmd.Username]
 		if ok {
 			log.Debugf("Username %v already login.", cmd.Username)
-			return nil, nil
+			return nil, pooljson.ErrAlreadyAuthorized
 		}
 	}
 
@@ -52,30 +51,70 @@ func handleAuthorize(wsc AbstractSocketClient, icmd interface{}) (interface{}, e
 	db := wsc.GetDB()
 	userService := service.GetUserService()
 
-	// Check password and address validity
-	if utils.IsBlank(cmd.Password) || utils.IsBlank(cmd.Username) {
-		log.Debugf("Client %v try to register without password or username.", wsc.RemoteAddr())
-		return nil, pooljson.ErrInvalidRequestParams
-	}
-
-	isExist, err := userService.UsernameExist(context.Background(), db, cmd.Username)
-	if err != nil {
-		log.Errorf("Database error: %v", err.Error())
-		return nil, pooljson.ErrInternal
-	}
-
-	if isExist {
-		success, _, err := userService.Login(context.Background(), db, cmd.Username, cmd.Password)
+	// If the user is login
+	if cmd.Registering == "0" {
+		// Check username validity
+		if utils.IsBlank(cmd.Username) {
+			log.Debugf("Client %v try to login without username.", wsc.RemoteAddr())
+			return nil, pooljson.ErrInvalidRequestParams
+		}
+		isExist, err := userService.UsernameExist(context.Background(), db, cmd.Username)
 		if err != nil {
-			log.Errorf("Login error: %v", err)
+			log.Errorf("Database error: %v", err.Error())
 			return nil, pooljson.ErrInternal
 		}
-		if !success {
-			log.Debugf("Password of username %v not correct.", cmd.Username)
-			return nil, pooljson.ErrPasswordIncorrect
+		if !isExist {
+			log.Debugf("Client %v login with username that does not exist.", wsc.RemoteAddr())
+			return nil, pooljson.ErrNotRegistered
 		}
+		if !utils.IsBlank(cmd.Password) {
+			success, _, err := userService.Login(context.Background(), db, cmd.Username, cmd.Password)
+			if err != nil {
+				log.Errorf("Login error: %v", err)
+				return nil, pooljson.ErrInternal
+			}
+			if !success {
+				log.Debugf("Password of username %v not correct.", cmd.Username)
+				return nil, pooljson.ErrPasswordIncorrect
+			}
+		}
+		log.Debugf("Username %v login successfully.", cmd.Username)
 	} else {
-		_, err = userService.RegisterUser(context.Background(), db, cmd.Username, cmd.Password, cmd.Username, nil)
+		// Register
+		// Check password and address validity
+		if utils.IsBlank(cmd.Password) || utils.IsBlank(cmd.Address) {
+			log.Debugf("Client %v try to register without password or address.", wsc.RemoteAddr())
+			return nil, pooljson.ErrInvalidRequestParams
+		}
+		passwordValid := utils.CheckPasswordValidity(cmd.Password)
+		if !passwordValid {
+			log.Debugf("Password %v is invalid", cmd.Password)
+			return nil, pooljson.ErrInvalidPassword
+		}
+		err := utils.CheckAddressValidity(cmd.Address, chaincfg.ActiveNetParams)
+		if err != nil {
+			log.Debugf("Username %v address check error: %v", cmd.Username, err)
+			return nil, pooljson.ErrAddressInvalid
+		}
+
+		// Calculate username
+		newUsername, err := utils.CalculateUsernameFromAddress(cmd.Address)
+		if err != nil {
+			log.Errorf("Calculate username from address error: %v", err)
+			return nil, pooljson.ErrInternal
+		}
+		cmd.Username = newUsername
+		// Check username exist
+		isExist, err := userService.UsernameExist(context.Background(), db, newUsername)
+		if err != nil {
+			log.Errorf("Database error: %v", err.Error())
+			return nil, pooljson.ErrInternal
+		}
+		if isExist {
+			log.Debugf("Client %v register with username that already exists.", wsc.RemoteAddr())
+			return nil, pooljson.ErrAlreadyRegisteredWithUsername(newUsername)
+		}
+		_, err = userService.RegisterUser(context.Background(), db, newUsername, cmd.Password, cmd.Address, nil)
 		if err != nil {
 			log.Errorf("Error when register user: %v", err)
 			if err == pooljson.ErrInvalidUsername || err == pooljson.ErrInvalidPassword {
@@ -93,9 +132,9 @@ func handleAuthorize(wsc AbstractSocketClient, icmd interface{}) (interface{}, e
 	stopStallHandler(wsc)
 
 	// Generate extra nonce, start notify
-	errMiner := minermgr.PrepareWork(wsc.QuitChan())
-	if errMiner != nil {
-		return nil, errMiner
+	err := minermgr.PrepareWork(wsc.QuitChan())
+	if err != nil {
+		return nil, err
 	}
 
 	notifyClients := make(map[chan struct{}]AbstractSocketClient)
@@ -108,7 +147,18 @@ func handleAuthorize(wsc AbstractSocketClient, icmd interface{}) (interface{}, e
 	ntfnMgr := wsc.GetNtfnManager()
 	ntfnMgr.AddNotifyNewJobClient(wsc)
 
-	res := true
+	if cmd.Registering == "0" {
+		res := pooljson.AuthorizeResult{
+			Worker:     cmd.Username,
+			Registered: "0",
+		}
+		return &res, nil
+	}
+	res := pooljson.AuthorizeResult{
+		Worker:     cmd.Username,
+		Username:   cmd.Username,
+		Registered: "1",
+	}
 	return &res, nil
 }
 
@@ -155,16 +205,14 @@ out:
 					userDesc, minerInfo.Difficulty, minerInfo.Difficulty/2)
 				targetShareStr := minerInfo.SetShareDifficulty(minerInfo.Difficulty / 2)
 				ntfnMgr := wsc.GetNtfnManager()
-				// ntfnMgr.notifySet(notifyClients, -1, targetShareStr, "", "", -1)
-				ntfnMgr.notifyDifficultyV1(notifyClients, targetShareStr)
+				ntfnMgr.notifySet(notifyClients, -1, targetShareStr, "", "", -1)
 			} else if sharePerMinute > float64(constdef.ExpectedSharePerMinute)*float64(constdef.ShareAdjustThreshold) {
 				// too fast
 				log.Debugf("User %v submits share too fast, adjusting difficulty from %v to %v",
 					userDesc, minerInfo.Difficulty, minerInfo.Difficulty*2)
 				targetShareStr := minerInfo.SetShareDifficulty(minerInfo.Difficulty * 2)
 				ntfnMgr := wsc.GetNtfnManager()
-				// ntfnMgr.notifySet(notifyClients, -1, targetShareStr, "", "", -1)
-				ntfnMgr.notifyDifficultyV1(notifyClients, targetShareStr)
+				ntfnMgr.notifySet(notifyClients, -1, targetShareStr, "", "", -1)
 			}
 		case <-wsc.QuitChan():
 			break out
@@ -193,23 +241,15 @@ func startNotify(wsc AbstractSocketClient, notifyClients map[chan struct{}]Abstr
 	job := minerMgr.GetJob()
 	ntfnMgr := wsc.GetNtfnManager()
 	if job != nil {
-
-		fmt.Println("WHYEEEEEEEEEEEEEEEE!")
 		jobMiner := minerInfo.AddJob(job)
 		log.Debugf("Sending mining.set to %v", userDesc)
+		epoch := ethash.CalculateEpoch(int32(job.Height))
 		target := jobMiner.CachedTargetShareStr
-		log.Debugf("Sending mining.set to %v", userDesc)
-
-		// ntfnMgr.notifySet(notifyClients, epoch, target, "abelhash", minerInfo.ExtraNonce1, minerInfo.ExtraNonce1BitLen)
-
-		ntfnMgr.notifyDifficultyV1(notifyClients, target)
-
+		ntfnMgr.notifySet(notifyClients, epoch, target, "abelhash", minerInfo.ExtraNonce1, minerInfo.ExtraNonce1BitLen)
 		log.Debugf("Sending mining.notify to %v (first time)", userDesc)
-
-		ntfnMgr.notifyNewJobV1(notifyClients, job)
+		ntfnMgr.notifyNewJob(notifyClients, job)
 		minerInfo.LastNotifyJob = job
 		minerInfo.LastNotifyAt = time.Now()
 	}
 
-	fmt.Println("WHYMMMMMMMMMMMMMMMM!")
 }
