@@ -112,19 +112,5 @@ func handleSubscribe(wsc AbstractSocketClient, icmd interface{}) (interface{}, e
 
 	resp := make([]interface{}, 0, 3)
 
-	body := make([]interface{}, 0, 2)
-	notify := make([]interface{}, 0, 2)
-	difficulty := make([]interface{}, 0, 2)
-	notify = append(notify, "mining.notify")
-	notify = append(notify, "000044191")
-	difficulty = append(difficulty, "mining.set_difficulty")
-	difficulty = append(difficulty, "000044192")
-	body = append(body, difficulty)
-	body = append(body, notify)
-
-	resp = append(resp, body)
-	resp = append(resp, "00004419")
-	resp = append(resp, 8)
-
 	return &resp, nil
 }
