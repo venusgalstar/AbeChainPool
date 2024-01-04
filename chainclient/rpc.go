@@ -497,8 +497,8 @@ out:
 			c.sendNotification(NTBlockConnected, blockInfo)
 			isChanged := c.getAndSetTemplate()
 			if !isChanged {
-				// log.Warnf("New block notification comes but no available new template, " +
-				// 	"this usually occurs when more than one block connected notification comes in a short time")
+				log.Warnf("New block notification comes but no available new template, " +
+					"this usually occurs when more than one block connected notification comes in a short time")
 				continue
 			}
 			c.sendNotification(NTBlockTemplateChanged, c.GetTemplate())
